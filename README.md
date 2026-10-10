@@ -47,12 +47,6 @@ Multiplayer uses [PeerJS](https://peerjs.com/) (WebRTC). The host's browser is t
 
 ## Run locally
 
-```sh
-git clone https://github.com/<you>/<repo>.git
-cd <repo>
-python3 -m http.server 8000
-```
-
 Then open <http://localhost:8000>. Opening `index.html` directly from disk also works for solo play, but serve it over HTTP to test invite links. To test multiplayer on one machine, open the invite link in a second tab or a private window.
 
 ## Deploy to GitHub Pages
