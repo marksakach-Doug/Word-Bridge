@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>A Word Bridge</title>
+<meta name="description" content="One word. Two meanings. Find the word that bridges both.">
+<!-- Link previews: set SITE to your deployed URL (absolute) and add og.png (1200x630) next to this file. -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Word Bridge">
+<meta property="og:description" content="One word. Two meanings. Find the word that bridges both.">
+<meta property="og:image" content="https://YOUR-SITE/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<style>
+:root{--paper:#fff;--ink:#000;--ash:#595959;--rule:#cfcfcf}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--paper);color:var(--ink)}
+body{font:15px/1.45 "Courier New",Courier,"Liberation Mono","Nimbus Mono PS",monospace;-webkit-text-size-adjust:100%}
+main{max-width:640px;margin:0 auto;padding:clamp(12px,3vw,20px)}
+.bar{display:flex;align-items:center;gap:10px;padding-bottom:8px;border-bottom:2px solid var(--ink)}
+.bar h1{margin:0;font-size:18px;line-height:1.2}
+.bar svg{width:44px;height:22px;flex:none}
+.bar span{margin-left:auto;color:var(--ash);font-size:13px}
+.word{margin:clamp(14px,4vw,24px) 0 10px;font-weight:700;line-height:1;font-size:clamp(52px,19vw,120px);overflow-wrap:anywhere}
+.senses{display:grid;gap:10px;margin:0 0 18px}
+.sense{margin:0;font-size:clamp(17px,4.4vw,20px);line-height:1.35;overflow-wrap:anywhere}
+.pos{font-style:italic;color:var(--ash);font-size:.85em;margin-right:.6em}
+@media (min-width:560px){.senses{grid-template-columns:1fr 1fr;gap:0}.sense+.sense{border-left:1px solid var(--rule);padding-left:20px}.sense:first-child{padding-right:20px}}
+.bridge{background:var(--ink);color:var(--paper);padding:clamp(12px,3vw,20px)}
+.bridge .big{font-weight:700;line-height:1.05;font-size:clamp(40px,12vw,84px);overflow-wrap:anywhere;animation:wordIn 2600ms cubic-bezier(.3,0,.2,1) both}
+@keyframes wordIn{0%{opacity:0;filter:blur(10px)}55%{opacity:.5;filter:blur(3px)}100%{opacity:1;filter:blur(0)}}
+.said{margin:14px 0 0;font-size:clamp(18px,4.6vw,24px);line-height:1.4;overflow-wrap:anywhere}
+.share{margin-top:22px;border-top:1px solid var(--rule);padding-top:14px}
+.row{display:flex;flex-wrap:wrap;gap:6px}
+.btn,button{font:inherit;color:var(--ink);background:var(--paper);border:2px solid var(--ink);border-radius:0;padding:6px 14px;min-height:40px;display:inline-flex;align-items:center;text-decoration:none;cursor:pointer}
+.btn:hover,button:hover{background:var(--ink);color:var(--paper)}
+.btn.small,button.small{font-size:14px;padding:3px 10px;border-width:1px;min-height:36px}
+.btn.go{background:var(--ink);color:var(--paper);font-weight:700;font-size:17px;padding:8px 20px}
+.btn.go:hover{background:var(--paper);color:var(--ink)}
+.btn:focus-visible,button:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
+.cta{margin-top:22px}
+.cta p{margin:10px 0 0;color:var(--ash);font-size:14px}
+.cta a.text{color:var(--ink)}
+.note{min-height:1.4em;margin:8px 0 0;color:var(--ash);font-size:13px}
+.hidden{display:none!important}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<main>
+  <header class="bar">
+    <svg viewBox="0 0 44 22" aria-hidden="true" fill="none" stroke="#000" stroke-width="2.5"><path d="M2 20V9M42 20V9M2 20H42M2 9Q22 -6 42 9"/></svg>
+    <h1>Word Bridge</h1>
+    <span>One word. Two meanings.</span>
+  </header>
+
+  <h2 id="word" class="word"></h2>
+  <div class="senses"><p id="sa" class="sense"></p><p id="sb" class="sense"></p></div>
+  <div class="bridge"><div id="bridge" class="big"></div></div>
+  <p id="said" class="said"></p>
+
+  <section class="share" aria-label="Share this card">
+    <div class="row" id="row">
+      <button id="b-native" class="hidden" type="button">Share…</button>
+      <button id="b-img" type="button">Save image</button>
+      <button id="b-copy" type="button">Copy link</button>
+    </div>
+    <div class="row" id="nets" style="margin-top:6px"></div>
+    <p id="note" class="note" role="status" aria-live="polite"></p>
+  </section>
+
+  <section class="cta">
+    <div class="row" id="cta"></div>
+    <p>Everyone writes one word that fits both meanings. Then the table argues about it.</p>
+  </section>
+</main>
+
+<script>
+(function(){
+'use strict';
+var PLAY = 'https://play.google.com/store/apps/details?id=com.marksakach.wordbridge&referrer=utm_source%3Dshare_card%26utm_medium%3Dweb';
+var HOME = new URL('./', location.href).href;
+var CTRL = /[\u0000-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
+var LETTERS;
+try { LETTERS = new RegExp("^[\\p{L}][\\p{L}'\u2019-]*$", 'u'); } catch(e) { LETTERS = /^[A-Za-z][A-Za-z'-]*$/; }
+function $(id){ return document.getElementById(id); }
+function el(tag, cls, text){ var n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; }
+function clean(s, max){ s = String(s == null ? '' : s).replace(CTRL, '').replace(/\s+/g, ' ').trim(); return Array.from(s).slice(0, max).join(''); }
+function pos(p){ return p === 'verb' ? 'verb' : 'noun'; }
+
+var q = new URLSearchParams(location.search);
+var d = { w: clean(q.get('w'), 24), ap: pos(q.get('ap')), ad: clean(q.get('ad'), 120), bp: pos(q.get('bp')), bd: clean(q.get('bd'), 120),
+          n: clean(q.get('n'), 24), x: clean(q.get('x'), 20).toLowerCase(), y: clean(q.get('y'), 80), s: q.get('s') === '1' };
+if (/^player$/i.test(d.n)) d.n = '';
+var real = !!(d.w && d.ad && d.bd && d.x && LETTERS.test(d.x));
+if (!real) d = { w: 'beat', ap: 'noun', ad: 'the steady pulse of music', bp: 'verb', bd: 'to hit again and again', n: '', x: 'drum', y: 'you hit it and it keeps time', s: false };
+
+function sentence(){
+  var who = d.s ? 'My' : (d.n ? d.n + '\u2019s' : 'A player\u2019s');
+  var t = who + ' word was ' + d.x;
+  if (d.y) t += ' \u2014 ' + d.y + (/[.!?]$/.test(d.y) ? '' : '.');
+  else t += '.';
+  return t;
+}
+var said = sentence();
+
+$('word').textContent = d.w;
+[['sa', d.ap, d.ad], ['sb', d.bp, d.bd]].forEach(function(r){
+  var p = $(r[0]); p.appendChild(el('span', 'pos', r[1])); p.appendChild(document.createTextNode(r[2]));
+});
+$('bridge').textContent = d.x;
+$('said').textContent = said;
+document.title = said;
+
+// ---- share ----
+var url = real ? location.href : HOME;
+var text = said + ' Can you bridge \u201c' + d.w + '\u201d? #WordBridge';
+var e = encodeURIComponent;
+var nets = [
+  ['X', 'https://x.com/intent/tweet?text=' + e(text) + '&url=' + e(url)],
+  ['Threads', 'https://www.threads.com/intent/post?text=' + e(text) + '&url=' + e(url)],
+  ['Bluesky', 'https://bsky.app/intent/compose?text=' + e(text + ' ' + url)],
+  ['WhatsApp', 'https://wa.me/?text=' + e(text + ' ' + url)],
+  ['Facebook', 'https://www.facebook.com/sharer/sharer.php?u=' + e(url)],
+  ['Telegram', 'https://t.me/share/url?url=' + e(url) + '&text=' + e(text)]
+];
+nets.forEach(function(n){
+  var a = el('a', 'btn small', n[0]); a.href = n[1]; a.target = '_blank'; a.rel = 'noopener noreferrer';
+  a.setAttribute('aria-label', 'Share on ' + n[0]); $('nets').appendChild(a);
+});
+var noteT;
+function note(t){ $('note').textContent = t; clearTimeout(noteT); noteT = setTimeout(function(){ $('note').textContent = ''; }, 2600); }
+
+if (navigator.share){
+  $('b-native').classList.remove('hidden');
+  $('b-native').addEventListener('click', function(){
+    navigator.share({ title: 'Word Bridge', text: text, url: url }).catch(function(){});
+  });
+}
+$('b-copy').addEventListener('click', function(){
+  var done = function(){ note('Link copied.'); };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(url).then(done, fallback);
+  else fallback();
+  function fallback(){
+    var t = document.createElement('textarea'); t.value = url; document.body.appendChild(t); t.select();
+    try { document.execCommand('copy'); done(); } catch(err){ note('Copy failed. Copy the address bar instead.'); }
+    document.body.removeChild(t);
+  }
+});
+
+// ---- image (1080x1350) ----
+var FONT = '"Courier New",Courier,"Liberation Mono",monospace';
+function wrap(ctx, t, maxW){
+  var words = t.split(' '), lines = [], cur = '';
+  words.forEach(function(w){
+    var test = cur ? cur + ' ' + w : w;
+    if (ctx.measureText(test).width > maxW && cur){ lines.push(cur); cur = w; } else cur = test;
+  });
+  if (cur) lines.push(cur);
+  return lines;
+}
+function fit(ctx, t, size, min, maxW, weight){
+  while (size > min){ ctx.font = weight + ' ' + size + 'px ' + FONT; if (ctx.measureText(t).width <= maxW) break; size -= 4; }
+  ctx.font = weight + ' ' + size + 'px ' + FONT; return size;
+}
+function drawCard(){
+  var W = 1080, H = 1350, M = 72, IW = W - M * 2;
+  var c = document.createElement('canvas'); c.width = W; c.height = H;
+  var x = c.getContext('2d');
+  x.fillStyle = '#fff'; x.fillRect(0, 0, W, H);
+  x.strokeStyle = '#000'; x.lineWidth = 8; x.strokeRect(24, 24, W - 48, H - 48);
+  x.textBaseline = 'alphabetic'; x.fillStyle = '#000';
+  x.font = '700 40px ' + FONT; x.fillText('Word Bridge', M, 120);
+  x.lineWidth = 6; x.beginPath(); x.moveTo(M, 150); x.lineTo(W - M, 150); x.stroke();
+  // headword
+  var s = fit(x, d.w, 260, 80, IW, '700'); var y = 150 + 40 + s * 0.85; x.fillText(d.w, M, y); y += 50;
+  // meanings
+  x.font = '30px ' + FONT;
+  [[d.ap, d.ad], [d.bp, d.bd]].forEach(function(m){
+    x.fillStyle = '#595959'; x.font = 'italic 26px ' + FONT; x.fillText(m[0], M, y + 36);
+    var off = x.measureText(m[0] + '  ').width;
+    x.fillStyle = '#000'; x.font = '32px ' + FONT;
+    wrap(x, m[1], IW - off).forEach(function(l, i){ x.fillText(l, M + off, y + 36 + i * 42); y += i ? 42 : 0; });
+    y += 62;
+  });
+  // bridge block
+  y += 10; var bh = 250;
+  x.fillStyle = '#000'; x.fillRect(M, y, IW, bh);
+  x.fillStyle = '#fff'; var bs = fit(x, d.x, 170, 60, IW - 80, '700'); x.fillText(d.x, M + 40, y + bh / 2 + bs * 0.33);
+  y += bh + 70;
+  // sentence
+  x.fillStyle = '#000'; x.font = '40px ' + FONT;
+  wrap(x, said, IW).slice(0, 7).forEach(function(l, i){ x.fillText(l, M, y + i * 54); });
+  x.fillStyle = '#595959'; x.font = '30px ' + FONT; x.fillText('One word. Two meanings.', M, H - 80);
+  return c;
+}
+$('b-img').addEventListener('click', function(){
+  drawCard().toBlob(function(b){
+    if (!b){ note('Could not make the image.'); return; }
+    var f = new File([b], 'word-bridge-' + d.x + '.png', { type: 'image/png' });
+    if (navigator.canShare && navigator.canShare({ files: [f] })){
+      navigator.share({ files: [f], text: text, url: url }).catch(function(){});
+    } else {
+      var a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = f.name;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(function(){ URL.revokeObjectURL(a.href); }, 4000); note('Image saved.');
+    }
+  }, 'image/png');
+});
+
+// ---- app link ----
+var android = /Android/i.test(navigator.userAgent);
+var play = el('a', 'btn' + (android ? ' go' : ''), 'Get it on Google Play'); play.href = PLAY; play.rel = 'noopener';
+var web = el('a', 'btn' + (android ? '' : ' go'), 'Play in your browser'); web.href = HOME;
+if (android){ $('cta').appendChild(play); $('cta').appendChild(web); } else { $('cta').appendChild(web); $('cta').appendChild(play); }
+})();
+</script>
+</body>
+</html>

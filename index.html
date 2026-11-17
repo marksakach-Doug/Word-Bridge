@@ -121,6 +121,16 @@ button.go[disabled]{background:var(--paper);color:#8c8c8c}
 .rules li{margin:5px 0}
 .rules p{margin:8px 0 0;max-width:60ch;font-size:14px}
 
+.btn{font:inherit;color:var(--ink);background:var(--paper);border:2px solid var(--ink);border-radius:0;padding:6px 14px;min-height:38px;display:inline-flex;align-items:center;text-decoration:none;cursor:pointer}
+.btn:hover{background:var(--ink);color:var(--paper)}
+.btn:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
+.btn.small{font-size:13px;padding:3px 10px;min-height:32px;border-width:1px}
+@media (pointer:coarse){.btn.small{min-height:40px}}
+.daydone{margin-top:14px;border:2px solid var(--ink);padding:12px 14px}
+.daydone p{margin:0 0 10px;max-width:56ch}
+.daydone .btn.go{background:var(--ink);color:var(--paper);font-weight:700}
+.daydone .btn.go:hover{background:var(--paper);color:var(--ink)}
+.beat-share{margin-left:.8em;vertical-align:middle}
 .hidden{display:none!important}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
@@ -168,6 +178,7 @@ button.go[disabled]{background:var(--paper);color:#8c8c8c}
       <div id="sealed" class="sealed hidden">
         <span id="sealed-word" class="sealed-word"></span>
         <button id="b-change" class="small">Change</button>
+        <a id="b-share" class="btn small hidden" target="_blank" rel="noopener">Share</a>
       </div>
     </div>
 
@@ -179,7 +190,7 @@ button.go[disabled]{background:var(--paper);color:#8c8c8c}
         <span id="tally" class="tally"></span>
         <span id="wait-note" class="tally hidden">Waiting for the next word.</span>
         <span id="hostbtns" class="hostbtns">
-          <button id="b-skip" class="small">Skip word</button>
+          <button id="b-skip" class="small hidden">Skip word</button>
           <button id="b-reveal" class="small">Reveal now</button>
           <button id="b-next" class="go">Next word</button>
         </span>
@@ -192,10 +203,14 @@ button.go[disabled]{background:var(--paper);color:#8c8c8c}
         <span><b>1.</b> When everyone's in, <b>Reveal now</b> to open the words early (or wait for the table).</span>
         <span><b>2.</b> Tap each revealed word to approve it. Your word turns <b>black</b> when it is a bridge. Tap again to take it back.</span>
         <span><b>3.</b> <b>Next word</b> when the words are all decided.</span>
-        <span><b>4.</b> <b>Skip word</b> abandons this one and deals a new word.</span>
       </span>
     </div>
   </section>
+
+  <div id="daydone" class="daydone hidden">
+    <p><b>That's your three words for today.</b> Come back tomorrow, or keep playing in the app: no daily limit, and rounds that wait for your friends.</p>
+    <a class="btn go" href="https://play.google.com/store/apps/details?id=com.marksakach.wordbridge&amp;referrer=utm_source%3Dweb_limit%26utm_medium%3Dweb" rel="noopener">Get it on Google Play</a>
+  </div>
 
   <section id="local-ui" class="hidden">
     <p class="hint">Create a room to play with friends, or play solo.</p>
@@ -210,6 +225,7 @@ button.go[disabled]{background:var(--paper);color:#8c8c8c}
       <li>Freely discuss which words are bridges. Talk about the near misses.</li>
       <li>One player is the arbiter each round, and the role passes around the table. They have the final say about which word is a true bridge. If your word turns black it means it is a bridge. Once the words are all decided on, arbiter pushes Next Word to reveal the next big word.</li>
       <li>The score at the bottom is how many words got bridged out of how many were played.</li>
+      <li>This browser plays three words a day, with no skips. For more, use the app.</li>
     </ol>
     <h3>Example Bridge</h3>
     <p><b>beat</b><br>noun: the steady pulse of music<br>verb: to hit again and again<br>Bridge: <b>drum</b></p>
@@ -532,6 +548,26 @@ var PAUSE_MS = 2400;   // the three dashes, one per third
 var WORD_MS = 2600;    // the word fading in
 var HOLD_MS = 2200;    // the word sits before the next person
 
+// ---------- daily limit: three words per browser per day, no skips ----------
+var DAY_MAX = 3;
+function dayStamp(){ var t = new Date(); return t.getFullYear() + '-' + (t.getMonth() + 1) + '-' + t.getDate(); }
+function dayRead(){
+    var st = { d: dayStamp(), keys: [] };
+    try {
+        var o = JSON.parse(localStorage.getItem('wb-day') || 'null');
+        if (o && o.d === st.d && Array.isArray(o.keys)) st.keys = o.keys;
+    } catch(e) {}
+    return st;
+}
+function dayCount(){ return dayRead().keys.length; }
+function dayHas(k){ return dayRead().keys.indexOf(k) !== -1; }
+function markPlayed(k){
+    if (!k) return;
+    var st = dayRead();
+    if (st.keys.indexOf(k) !== -1) return;
+    st.keys.push(k);
+    try { localStorage.setItem('wb-day', JSON.stringify(st)); } catch(e) {}
+}
 function keyOf(){ return S ? (S.inst + ':' + S.round) : ''; }
 
 // ---------- words ----------
@@ -797,11 +833,7 @@ function onIntent(d, from){
             else broadcast();
             return;
         }
-        if (d.a === 'skip'){
-            if (S.phase !== 'play') return;
-            startRound();
-            return;
-        }
+        if (d.a === 'skip'){ deny(from.id, 'No skips.'); return; }
         if (d.a === 'reveal'){
             if (S.phase !== 'play') return;
             if (!reveal()){ deny(from.id, 'Need at least two words first.'); return; }
@@ -881,6 +913,7 @@ function actApprove(i){
     }
 }
 function actSkip(){
+    return; // no skips
     if (!S || S.phase !== 'play') return;
     if (!needArbiter()) return;
     if (isHost()) startRound();
@@ -1141,6 +1174,18 @@ function skipReveal(){
         cerToNext();
     }
 }
+// ---------- share card ----------
+function cardUrl(who, word, why){
+    var p = S && S.word; if (!p || !word) return '';
+    var u = new URL('share.html', location.href);
+    var q = u.searchParams;
+    q.set('w', p.w); q.set('ap', p.a.p); q.set('ad', p.a.d); q.set('bp', p.b.p); q.set('bd', p.b.d);
+    q.set('x', word);
+    if (why) q.set('y', why);
+    if (soloOn) q.set('s', '1');
+    else if (who && who !== 'Player') q.set('n', who);
+    return u.href;
+}
 function renderBeat(box, b, opts){
     opts = opts || {};
     var beat = el('div', 'beat');
@@ -1149,6 +1194,13 @@ function renderBeat(box, b, opts){
     var fullWhy = String(b.why || '');
     line.appendChild(document.createTextNode(opts.whyPartial != null ? fullWhy.slice(0, opts.whyPartial) : fullWhy));
     if (opts.whyCaret) line.appendChild(el('span', 'caret'));
+    if (opts.share && b.w){
+        var sh = el('a', 'btn small beat-share', 'Share');
+        sh.href = cardUrl(rawName(b.id), b.w, b.why); sh.target = '_blank'; sh.rel = 'noopener';
+        sh.setAttribute('aria-label', 'Share ' + rawName(b.id) + ' word ' + b.w);
+        sh.addEventListener('click', function(ev){ ev.stopPropagation(); });
+        line.appendChild(sh);
+    }
     beat.appendChild(line);
     if (opts.wordShown || opts.wordFade != null || opts.wordGhost){
         var fullW = String(b.w || '');
@@ -1212,7 +1264,7 @@ function renderReveal(){
         return;
     }
     for (i = 0; i < beats.length; i++){
-        renderBeat(box, beats[i], { wordShown: true, divShown: true });
+        renderBeat(box, beats[i], { wordShown: true, divShown: true, share: true });
     }
     if (iAmArbiter()) {
       box.appendChild(el('p', 'miss', soloOn
@@ -1239,6 +1291,8 @@ function renderPeople(){
 function renderHub(){
     var playing = !!S && S.phase === 'play';
     var revealing = !!S && S.phase === 'reveal';
+    var capped = dayCount() >= DAY_MAX;
+    if (capped && !(revealing && dayHas(keyOf()))){ playing = false; revealing = false; }
     var host = isHost(), gone = paused(), arb = iAmArbiter();
     $('play').classList.toggle('hidden', !playing);
     $('reveal').classList.toggle('hidden', !revealing);
@@ -1250,6 +1304,12 @@ function renderHub(){
         if ($('whybox')) $('whybox').classList.toggle('hidden', !showInput);
         $('sealed').classList.toggle('hidden', showInput);
         $('sealed-word').textContent = myWord ? ('You wrote ' + myWord + (myWhy ? ' — ' + myWhy : '')) : 'You are locked in';
+        var shb = $('b-share');
+        if (shb){
+            var su = myWord ? cardUrl(soloOn ? '' : myName(), myWord, myWhy) : '';
+            if (su) shb.href = su;
+            shb.classList.toggle('hidden', !su);
+        }
         $('b-lock').disabled = gone;
         $('in').disabled = gone;
         if ($('in-why')) $('in-why').disabled = gone;
@@ -1261,10 +1321,10 @@ function renderHub(){
     if (S && S.played) t = 'Bridged ' + S.found + ' of ' + S.played + (S.played === 1 ? ' word' : ' words');
     $('tally').textContent = t;
     $('hostbtns').classList.toggle('hidden', !(arb && S));
-    $('b-skip').classList.toggle('hidden', !playing);
+    $('b-skip').classList.add('hidden');
     $('b-reveal').classList.toggle('hidden', !playing || soloOn);
     $('b-reveal').disabled = !playing || lockedCount() < minPlayers();
-    $('b-next').classList.toggle('hidden', !revealing);
+    $('b-next').classList.toggle('hidden', !revealing || capped);
     $('wait-note').classList.toggle('hidden', arb || !revealing);
     $('people').classList.toggle('hidden', revealing || soloOn);
 }
@@ -1283,17 +1343,21 @@ function fitAll(){
 }
 function render(){
     var hub = (mode === 'hub'), local = (mode === 'local');
+    if (S && S.phase === 'reveal' && (hub || soloOn)) markPlayed(keyOf());
+    var capped = dayCount() >= DAY_MAX;
+    $('daydone').classList.toggle('hidden', !capped);
     var home = !soloOn && (local || (hub && !S));
     $('menu').classList.toggle('hidden', !(soloOn || (hub && isHost())));
     $('b-new').classList.toggle('hidden', soloOn);
+    $('b-new').disabled = capped;
     $('b-home').classList.toggle('hidden', !soloOn);
     // Solo players are the arbiter too — they just tap their own words — so the
     // instructions used to hide in exactly the one mode with no second player to
     // ask. Now shown whenever there is an arbiter, solo included.
     $('arbnote').classList.toggle('hidden', !(hub && !soloOn && S && iAmArbiter()));
     $('hub-ui').classList.toggle('hidden', !(hub || soloOn));
-    $('local-ui').classList.toggle('hidden', !(local && !soloOn));
-    $('homebtns').classList.toggle('hidden', !home);
+    $('local-ui').classList.toggle('hidden', !(local && !soloOn) || capped);
+    $('homebtns').classList.toggle('hidden', !home || capped);
     $('b-create').classList.toggle('hidden', !(local && !soloOn));
     $('b-start').classList.toggle('hidden', !(hub && isHost() && !S));
     $('roominfo').classList.toggle('hidden', !(hub && isHost() && !S));
