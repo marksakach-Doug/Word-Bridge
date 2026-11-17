@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light">
 <title>Word Bridge</title>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <style>
 :root{--paper:#fff;--ink:#000;--ash:#595959;--rule:#cfcfcf;--gut:clamp(12px,3vw,18px)}
 *{box-sizing:border-box}
@@ -145,8 +146,13 @@ button.go[disabled]{background:var(--paper);color:#8c8c8c}
   <p id="lead" class="lead hidden">Everyone writes one word that fits both meanings and locks it in. Then the words are opened together.</p>
 
   <div id="homebtns" class="homebtns hidden">
+    <button id="b-create" class="go hidden">Create room</button>
     <button id="b-start" class="go hidden">New game</button>
     <button id="b-solo">Solo game</button>
+  </div>
+  <div id="roominfo" class="hidden" style="margin-top:10px;">
+    <p class="hint">Share this link:</p>
+    <div class="entry"><input id="roomlink" type="text" readonly><button id="b-copy" class="small">Copy</button></div>
   </div>
 
   <section id="hub-ui" class="hidden">
@@ -192,7 +198,7 @@ button.go[disabled]{background:var(--paper);color:#8c8c8c}
   </section>
 
   <section id="local-ui" class="hidden">
-    <p class="hint">To play with friends, open Bub Hub, join a room and start Word Bridge there.</p>
+    <p class="hint">Create a room to play with friends, or play solo.</p>
   </section>
 
   <details id="rules" class="rules">
@@ -330,15 +336,113 @@ function el(tag, cls, text){ var n = document.createElement(tag); if (cls) n.cla
 function clear(n){ while (n.firstChild) n.removeChild(n.firstChild); }
 function shuffle(a){ for (var i = a.length - 1; i > 0; i--){ var j = Math.floor(Math.random() * (i + 1)); var t = a[i]; a[i] = a[j]; a[j] = t; } return a; }
 
-// ---------- bridge to the hub ----------
+// ---------- peer-to-peer room (PeerJS) ----------
+function getName(){ var n = localStorage.getItem('wb-name'); if (!n){ n = prompt('Your name?', 'Player'); if (!n) n = 'Player'; localStorage.setItem('wb-name', n); } return n; }
+function showRoomInfo(code){
+    var box = $('roominfo');
+    var link = location.origin + location.pathname + '?room=' + encodeURIComponent(code);
+    $('roomlink').value = link;
+    box.classList.remove('hidden');
+}
+function createRoom(){
+    var name = getName();
+    var code = Math.random().toString(36).slice(2, 8).toUpperCase();
+    Hub.isHost = true;
+    Hub.room = code;
+    Hub.peer = new Peer('wb-' + code);
+    Hub.peer.on('open', function(id){
+        Hub.me = { id: id, name: name, isHost: true };
+        Hub.roster = [{ id: id, name: name, host: true }];
+        mode = 'hub';
+        render();
+        showRoomInfo(code);
+    });
+    Hub.peer.on('connection', function(conn){
+        Hub.conns.push(conn);
+        conn.on('data', function(data){ handleGuestData(conn, data); });
+        conn.on('close', function(){ removeGuest(conn.peer); });
+    });
+    Hub.peer.on('error', function(e){ toast('Peer error: ' + (e && e.type ? e.type : e)); });
+}
+function joinRoom(code){
+    var name = getName();
+    Hub.isHost = false;
+    Hub.room = code;
+    Hub.peer = new Peer();
+    Hub.peer.on('open', function(myId){
+        Hub.me = { id: myId, name: name, isHost: false };
+        var conn = Hub.peer.connect('wb-' + code);
+        Hub.conns = [conn];
+        conn.on('open', function(){ conn.send({ k: 'join', p: { name: name } }); });
+        conn.on('data', function(data){ handleHostData(data); });
+        conn.on('close', function(){ toast('Disconnected from host.'); });
+        conn.on('error', function(e){ toast('Connection error.'); });
+    });
+    Hub.peer.on('error', function(e){ toast('Peer error: ' + (e && e.type ? e.type : e)); });
+}
+function removeGuest(id){
+    Hub.roster = Hub.roster.filter(function(m){ return m.id !== id; });
+    Hub.conns = Hub.conns.filter(function(c){ return c.peer !== id; });
+    // re-broadcast roster
+    Hub.conns.forEach(function(c){
+        var m = Hub.roster.filter(function(x){ return x.id === c.peer; })[0] || {};
+        c.send({ k: 'roster', p: { you: { id: c.peer, name: m.name, isHost: false }, roster: Hub.roster, room: Hub.room } });
+    });
+    if (Hub.me) onRoster();
+}
+function handleGuestData(conn, data){
+    if (!data || !data.k) return;
+    if (data.k === 'join'){
+        var gid = conn.peer;
+        var existing = Hub.roster.filter(function(m){ return m.id === gid; })[0];
+        if (!existing) Hub.roster.push({ id: gid, name: data.p.name || 'Player', host: false });
+        else existing.name = data.p.name || existing.name;
+        Hub.conns.forEach(function(c){
+            var m = Hub.roster.filter(function(x){ return x.id === c.peer; })[0] || {};
+            c.send({ k: 'roster', p: { you: { id: c.peer, name: m.name, isHost: false }, roster: Hub.roster, room: Hub.room } });
+        });
+        onRoster();
+        return;
+    }
+    if (data.k === 'intent'){
+        onIntent(data.p, data.from || { id: conn.peer, name: (Hub.roster.filter(function(m){ return m.id === conn.peer; })[0] || {}).name });
+        return;
+    }
+}
+function handleHostData(data){
+    if (!data || !data.k) return;
+    if (data.k === 'roster'){
+        Hub.me = data.p.you; Hub.roster = data.p.roster || []; Hub.room = data.p.room;
+        mode = 'hub';
+        onRoster();
+        return;
+    }
+    if (data.k === 'state'){ onState(data.p); return; }
+    if (data.k === 'intent'){ onIntent(data.p, data.from); return; }
+    if (data.k === 'denied'){ onDenied(data.p && data.p.text); return; }
+    if (data.k === 'reset'){ doReset(); return; }
+}
 var Hub = {
     me: null, roster: [], room: '',
-    up: function(k, p){ try { window.parent.postMessage({ t: 'gu', game: GAME_ID, k: k, p: p }, '*'); } catch(e) {} },
+    peer: null, conns: [], isHost: false,
+    up: function(k, p){
+        if (this.isHost){
+            if (k === 'denied' && p && p.to){
+                this.conns.forEach(function(c){ if (c.peer === p.to) c.send({ k: 'denied', p: { text: p.text } }); });
+                return;
+            }
+            var msg = { k: k, p: p, from: this.me ? { id: this.me.id, name: this.me.name } : null };
+            this.conns.forEach(function(c){ try { c.send(msg); } catch(e) {} });
+        } else {
+            var c = this.conns && this.conns[0];
+            if (c) try { c.send({ k: k, p: p, from: this.me ? { id: this.me.id, name: this.me.name } : null }); } catch(e) {}
+        }
+    },
     init: function(){
-        window.addEventListener('message', onDown);
-        this.up('hello');
-        var topLevel = (window.parent === window);
-        setTimeout(function(){ if (!Hub.me) goLocal(); }, topLevel ? 50 : 1500);
+        var params = new URLSearchParams(location.search);
+        var room = params.get('room');
+        if (room){ joinRoom(room); }
+        else { goLocal(); }
     }
 };
 var heightT = null;
@@ -1190,7 +1294,9 @@ function render(){
     $('hub-ui').classList.toggle('hidden', !(hub || soloOn));
     $('local-ui').classList.toggle('hidden', !(local && !soloOn));
     $('homebtns').classList.toggle('hidden', !home);
+    $('b-create').classList.toggle('hidden', !(local && !soloOn));
     $('b-start').classList.toggle('hidden', !(hub && isHost() && !S));
+    $('roominfo').classList.toggle('hidden', !(hub && isHost() && !S));
     $('lead').classList.toggle('hidden', !home);
     var st = statusText();
     $('status').textContent = st;
@@ -1209,6 +1315,8 @@ function render(){
 // ---------- wire up ----------
 $('b-new').addEventListener('click', newGame);
 $('b-start').addEventListener('click', newGame);
+$('b-create').addEventListener('click', createRoom);
+$('b-copy').addEventListener('click', function(){ try { navigator.clipboard.writeText($('roomlink').value); toast('Link copied.'); } catch(e){ $('roomlink').select(); document.execCommand('copy'); toast('Link copied.'); } });
 $('b-lock').addEventListener('click', actLock);
 $('in').addEventListener('keydown', function(e){ if (e.key === 'Enter'){ e.preventDefault(); actLock(); } });
 if ($('in-why')) $('in-why').addEventListener('keydown', function(e){ if (e.key === 'Enter'){ e.preventDefault(); actLock(); } });
